@@ -5,7 +5,7 @@ from typing import List
 import uvicorn
 import os
 import shutil
-from backend.ingest import ingest_file
+from backend.ingest import process_file_from_path
 from backend.rag import answer_query
 
 app = FastAPI(title="Multimodal RAG System")

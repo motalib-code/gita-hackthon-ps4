@@ -1,11 +1,10 @@
-import chromadb
 from langchain_chroma import Chroma
-from langchain_openai import OpenAIEmbeddings
+from langchain_google_genai import GoogleGenerativeAIEmbeddings
 import os
 
-# Initialize Vector Store
-# Using OpenAI Embeddings for best compatibility with GPT-4o
-embeddings = OpenAIEmbeddings(model="text-embedding-3-small")
+# Initialize Vector Store using Google Gemini Embeddings
+# Using "models/text-embedding-004" which is a strong embedding model
+embeddings = GoogleGenerativeAIEmbeddings(model="models/text-embedding-004")
 
 PERSIST_DIRECTORY = "./backend/chroma_db"
 

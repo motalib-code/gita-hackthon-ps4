@@ -1,4 +1,4 @@
-from langchain_openai import ChatOpenAI
+from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.output_parsers import StrOutputParser
 from backend.vector_store import query_documents
@@ -42,7 +42,12 @@ def format_docs_with_metadata(docs):
     return "\n".join(formatted)
 
 def get_rag_chain():
-    llm = ChatOpenAI(model="gpt-4o", temperature=0)
+    # Use Gemini 1.5 Flash (fast & capable) or Pro
+    llm = ChatGoogleGenerativeAI(
+        model="gemini-1.5-flash",
+        temperature=0,
+        convert_system_message_to_human=True
+    )
     prompt = ChatPromptTemplate.from_template(JUDGE_SYSTEM_PROMPT)
 
     chain = prompt | llm | StrOutputParser()
