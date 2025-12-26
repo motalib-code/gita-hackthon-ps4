@@ -38,13 +38,12 @@ This project is a **Streamlit application** for processing multimodal documents 
 ### 📥 Fork and Clone the Repository
 
 1. **Fork the repository**:
-   Navigate to [RAG-Architecture GitHub Repository](https://github.com/pacificrm/RAG-Architecture) and click **Fork**.
+   Navigate to and click **Fork**.
 
 2. **Clone the forked repository**:
 
    ```bash
-   git clone https://github.com/<your-username>/RAG-Architecture.git
-   cd RAG-Architecture
+   git clone https://github.com/<your-username>
 
    ```
 
