@@ -1,155 +1,75 @@
-# 🌟 Multimodal Document Processing RAG with LangChain 🌟
+# Multimodal RAG System Challenge
 
-This project is a **Streamlit application** for processing multimodal documents and querying a **Milvus database**. It leverages cutting-edge tools like **LangChain**, **transformers**, **EasyOCR**, and others for processing, storing, and querying text extracted from various file types. 🚀
+This repository contains the solution for the Multimodal RAG System Challenge (PS ID: GITACVPS004). It is a robust system capable of ingesting Text (PDF), Audio (MP3/WAV), and Images (Charts), storing them in a unified vector database, and answering queries with strict citations and conflict detection.
 
----
+## Key Features
 
-## ✨ Features
+1.  **Unified Storage**: All modalities are indexed in a single ChromaDB instance.
+2.  **Strict Citations**: Every claim is cited with `[Source: filename at timestamp/page]`.
+3.  **Conflict Detection**: The system explicitly detects and reports contradictions between sources (e.g., Audio vs PDF).
+4.  **Transparent Reasoning**: The Frontend shows the exact chunks retrieved for every answer.
 
-### 🗂️ **Upload File Processing**:
+## Tech Stack
 
-- Supports multiple file types: `audio`, `video`, `image`, `text`, `csv`, `yaml`, `json`, `docx`, and `pdf`.
-- Extracts text content using:
-  - 🔊 **Audio**: `speech_recognition` and `pydub`.
-  - 🎥 **Video**: Custom extraction logic.
-  - 🖼️ **Image**: `EasyOCR`.
-  - 📄 **Text/Logs/Documents**: LangChain loaders.
+-   **Backend**: Python (FastAPI), LangChain, ChromaDB.
+-   **AI Engines**: OpenAI GPT-4o (Reasoning & Vision), Whisper (Audio), OpenAI Embeddings.
+-   **Frontend**: React.js with Tailwind CSS.
 
-### 🛠️ **Milvus Integration**:
+## Setup & Running
 
-- 🗃️ Stores processed document embeddings for similarity-based querying.
-- 🧠 Utilizes `HuggingFaceEmbeddings` for generating vector representations.
+### Prerequisites
+-   Python 3.10+
+-   Node.js & npm
+-   OpenAI API Key
 
-### 🔍 **Query Interface**:
+### Backend
+1.  Navigate to the root directory.
+2.  Install dependencies:
+    ```bash
+    pip install -r backend/requirements.txt
+    ```
+3.  Set your API Key:
+    ```bash
+    export OPENAI_API_KEY="your-sk-..."
+    ```
+4.  Run the server:
+    ```bash
+    uvicorn backend.main:app --reload --host 0.0.0.0 --port 8000
+    ```
+    The API will be available at `http://localhost:8000`.
 
-- Natural language query interface.
-- Implements a **Retrieval-Augmented Generation (RAG)** pipeline for AI-driven responses.
+### Frontend
+1.  Navigate to the `frontend` folder:
+    ```bash
+    cd frontend
+    ```
+2.  Install dependencies:
+    ```bash
+    npm install
+    ```
+3.  Start the development server:
+    ```bash
+    npm start
+    ```
+    The app will run at `http://localhost:3000`.
 
----
+## Architecture Details
 
-## 🛠️ Installation
+### Conflict Detection Strategy
+The system uses a unique "Judge" prompt in `backend/rag.py`. When retrieval happens, the LLM is instructed to:
+1.  Analyze all retrieved chunks.
+2.  Identify mutually exclusive claims.
+3.  If a conflict exists, output: "**CONFLICT DETECTED**: Source A claims X, while Source B claims Y."
 
-### 🔧 Prerequisites
+### Strict Citations
+The ingestion pipeline (`backend/ingest.py`) assigns a `citation_ref` metadata field to every chunk (e.g., "meeting.mp3 at 02:45"). The LLM is forced via system prompt to append this reference to every generated sentence.
 
-- Python 3.8+
-- `pip` or `conda` package manager
-- CUDA-compatible GPU (optional, for faster processing)
+### Frontend Logic
+The React app parses the LLM's response for `[Source: ...]` tags. These are converted into clickable elements. If the source is an audio file with a timestamp, the frontend parses the time (e.g., "02:30") and seeks the audio player to that point.
 
-### 📥 Fork and Clone the Repository
-
-1. **Fork the repository**:
-   Navigate to and click **Fork**.
-
-2. **Clone the forked repository**:
-
-   ```bash
-   git clone https://github.com/<your-username>
-
-   ```
-
-# 📦 Install Dependencies
-
-```bash
-pip install -r requirements.txt
-```
-
-## 🚀 Usage
-
-### 🖥️ Start the Application
-
-Run the Streamlit app:
-
-```bash
-streamlit run app.py
-```
-
-## 🔄 Application Modes
-
-### 📤 Upload Files:
-
-- Upload a file to process and store its content in Milvus.
-- Displays extracted content and stores embeddings in the database.
-
-### ❓ Query:
-
-- Enter a question to search and retrieve relevant information from the Milvus database.
-- Returns AI-generated responses using LangChain's RAG pipeline.
-
-## 📁 File Structure
-
-````bash
-## 📁 **File Structure**
-
-```bash
-project/
-│
-├── app.py                      # 🎯 Main Streamlit application
-├── requirements.txt            # 📦 Python dependencies
-├── utils/                      # 🛠️ Utility modules
-│   ├── audio_utils.py          # 🎵 Audio file processing
-│   ├── video_utils.py          # 📹 Video file processing
-│   ├── image_utils.py          # 🖼️ Image file processing
-│   ├── document_loaders.py     # 📜 Document processing loaders
-│   ├── milvus_client.py        # 🗄️ Initializes Milvus database
-│
-├── milvus_database.db          # 🗃️ Milvus database file (auto-created)
-├── Dataset                     # 📂 Folder to store datasets
-├── Images                      # 📁 Folder for storing images
-
-````
-
-🔑 **Key Modules**
-
-### `app.py`
-
-🧩 **Main application logic**
-
-- Handles file uploads, document processing, and querying.
-
-### `utils/`
-
-- 🎵 **Audio**: Splits audio into chunks and transcribes text.
-- 📹 **Video**: Processes video files to extract and analyze content.
-- 🖼️ **Image**: Uses EasyOCR for extracting text.
-- 📜 **Logs/Documents**: Processes CSV, YAML, JSON, and PDF files into structured LangChain documents.
-
----
-
-🛠️ **Example Workflow**
-
-### 📤 **Uploading a File**
-
-1. Select **"Upload Files"** mode.
-2. Upload a file (e.g., `example.pdf`).
-3. Process and store the file in the database.
-
-### ❓ **Querying the Database**
-
-1. Select **"Query"** mode.
-2. Enter a natural language question.
-3. Receive a concise, fact-based response.
-
-![RAG](Images/Flowcharts.png)
-
----
-
-🌟 **Future Improvements**
-
-- 🔍 Add more advanced query capabilities.
-- 📂 Enhance support for additional file types and embeddings.
-- ⚡ Improve scalability for larger datasets.
-
----
-
-📜 **License**
-This project is licensed under the **MIT License**.
-
----
-
-🙌 **Acknowledgments**
-
-- 🌐 **Streamlit** for the interactive UI.
-- 📚 **LangChain** and **Milvus** for document processing, retrieval and vector db.
-- 🤖 **Transformers** for embedding generation.
-- 🖼️ **EasyOCR** for image text extraction.
-- 📹 **Moviepy** for video processing.
+## Deliverables Checklist
+- [x] Unified Storage (ChromaDB)
+- [x] Strict Citations (Implemented in Prompts & Metadata)
+- [x] Conflict Detection (Implemented in Judge Logic)
+- [x] React Frontend Architecture
+- [x] Backend API (FastAPI)

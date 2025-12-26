@@ -1,0 +1,14 @@
+openai
+fastapi
+uvicorn
+python-multipart
+chromadb
+tiktoken
+langchain
+langchain-community
+langchain-core
+langchain-openai
+pypdf
+pydub
+SpeechRecognition
+pillow
