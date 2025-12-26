@@ -1,15 +1,16 @@
 import streamlit as st
-from langchain.schema import Document
-from langchain.text_splitter import RecursiveCharacterTextSplitter
+from langchain_core.documents import Document
+from langchain_text_splitters import RecursiveCharacterTextSplitter
 from transformers import AutoTokenizer, AutoModel,AutoModelForSeq2SeqLM, AutoModelForCausalLM, pipeline
-from langchain.llms import HuggingFacePipeline
-from pymilvus import MilvusClient
+from langchain_community.llms import HuggingFacePipeline
+# from pymilvus import MilvusClient
+from langchain_community.vectorstores import FAISS
 import torch
 from langchain_core.runnables import RunnablePassthrough
 from langchain_core.prompts import PromptTemplate
 from langchain_core.output_parsers import StrOutputParser
-from langchain_milvus import Milvus 
-from langchain.embeddings import HuggingFaceEmbeddings
+# from langchain_milvus import Milvus 
+from langchain_community.embeddings import HuggingFaceEmbeddings
 from transformers import T5EncoderModel
 from utils.audio_utils import extract_audio_text
 from utils.video_utils import extract_video_text
@@ -39,11 +40,12 @@ device = torch.device("cpu")
 clear_cuda_memory()
 
 # Initialize Milvus client
-client = MilvusClient("milvus_database.db")
-client.create_collection(
-    collection_name="my_collection",
-    dimension=768
-)
+# Client initialization removed for FAISS compatibility
+# client = MilvusClient("milvus_database.db")
+# client.create_collection(
+#     collection_name="my_collection",
+#     dimension=768
+# )
 
 
 # Function to format documents
@@ -67,12 +69,14 @@ def process_and_store_documents(documents):
     st.write("Chunks generated:")
     st.write(chunks)
     embeddings=HuggingFaceEmbeddings()
-    vectorstore = Milvus.from_documents(
-        documents=chunks,
-        embedding=embeddings,  # Pass the embeddings
-        connection_args={"uri": "./milvus_database.db"},
-        # drop_old=True,  # Drop old collection
-    )
+    vectorstore = FAISS.from_documents(chunks, embeddings)
+    vectorstore.save_local("faiss_index")
+    # vectorstore = Milvus.from_documents(
+    #     documents=chunks,
+    #     embedding=embeddings,  # Pass the embeddings
+    #     connection_args={"uri": "./milvus_database.db"},
+    #     # drop_old=True,  # Drop old collection
+    # )
 
     st.success("Documents processed and stored in Milvus successfully!")
 
@@ -141,11 +145,16 @@ def app():
 
                 embeddings=HuggingFaceEmbeddings()
                 
-                vectorstore = Milvus(
-                    embedding_function=embeddings,
-                    connection_args={"uri": "./milvus_database.db"},
-                    collection_name="LangChainCollection",
-                )
+                # vectorstore = Milvus(
+                #     embedding_function=embeddings,
+                #     connection_args={"uri": "./milvus_database.db"},
+                #     collection_name="LangChainCollection",
+                # )
+                try:
+                    vectorstore = FAISS.load_local("faiss_index", embeddings, allow_dangerous_deserialization=True)
+                except Exception as e:
+                    st.error("Index not found. Please upload a document first.")
+                    return
                 # Perform similarity search using the query embedding
                 # docs = vectorstore.similarity_search(query, k=2)
                 # docs = vectorstore.similarity_search_with_score(query,k=2)
@@ -167,9 +176,9 @@ def app():
                 model = AutoModelForSeq2SeqLM.from_pretrained(
                     model_name,
                     device_map='auto',
-                    torch_dtype=torch.float16,
+                    torch_dtype=torch.float32,
                     token="hf_token",
-                    load_in_8bit=True  # Enable 8-bit quantization
+                    # load_in_8bit=True  # Enable 8-bit quantization
                     # load_in_4bit=True  # Enable 4-bit quantization
                 )
                 
@@ -179,7 +188,7 @@ def app():
                     "text2text-generation",
                     model=model,
                     tokenizer=tokenizer,
-                    torch_dtype=torch.bfloat16,
+                    torch_dtype=torch.float32,
                     device_map="auto",
                     max_new_tokens=512,
                     do_sample=True,

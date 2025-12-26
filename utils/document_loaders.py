@@ -4,8 +4,8 @@ import json
 import tempfile
 import os
 from pathlib import Path
-from langchain.schema import Document
-from langchain.document_loaders import  PyPDFLoader, TextLoader
+from langchain_core.documents import Document
+from langchain_community.document_loaders import PyPDFLoader, TextLoader
 from langchain_community.document_loaders.csv_loader import CSVLoader
 from langchain_community.document_loaders import UnstructuredWordDocumentLoader, Docx2txtLoader
 
