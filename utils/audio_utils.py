@@ -1,7 +1,15 @@
 import tempfile
 import os
+import imageio_ffmpeg
+
+# Add ffmpeg to PATH so pydub finds it without warning (best effort)
+os.environ["PATH"] += os.pathsep + os.path.dirname(imageio_ffmpeg.get_ffmpeg_exe())
+
 import speech_recognition as sr
 from pydub import AudioSegment
+
+# Explicitly set converter as fail-safe
+AudioSegment.converter = imageio_ffmpeg.get_ffmpeg_exe()
 
 recognizer = sr.Recognizer()
 
