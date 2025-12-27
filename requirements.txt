@@ -162,3 +162,5 @@ chromadb
 langchain-chroma
 langchain-openai
 openai
+opencv-python-headless
+langchain-community

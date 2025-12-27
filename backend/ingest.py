@@ -9,7 +9,8 @@ from langchain_core.messages import HumanMessage
 from openai import OpenAI
 import traceback
 import cv2  # For video frame extraction
-from moviepy.editor import VideoFileClip # For audio extraction
+# Update for moviepy 2.0+
+from moviepy import VideoFileClip
 
 def process_pdf(file_path, file_name):
     try:
@@ -125,27 +126,42 @@ def process_video(file_path, file_name):
         with tempfile.NamedTemporaryFile(suffix=".mp3", delete=False) as temp_audio:
             temp_audio_path = temp_audio.name
 
-        clip.audio.write_audiofile(temp_audio_path, verbose=False, logger=None)
+        # MoviePy 2.0+ audio write
+        # .audio is an AudioClip
+        if clip.audio:
+            clip.audio.write_audiofile(temp_audio_path, verbose=False, logger=None)
 
-        # Transcribe
-        audio_docs = process_audio(temp_audio_path, file_name)
-        # Update metadata to reflect it's from video
-        for doc in audio_docs:
-            doc.metadata["type"] = "video_audio"
-            doc.metadata["citation_ref"] = f"{file_name} (Audio) at {doc.metadata.get('timestamp')}"
+            # Transcribe
+            audio_docs = process_audio(temp_audio_path, file_name)
+            # Update metadata to reflect it's from video
+            for doc in audio_docs:
+                doc.metadata["type"] = "video_audio"
+                doc.metadata["citation_ref"] = f"{file_name} (Audio) at {doc.metadata.get('timestamp')}"
 
-        docs.extend(audio_docs)
+            docs.extend(audio_docs)
+        else:
+            print("No audio track found in video.")
+
         os.remove(temp_audio_path)
+        clip.close()
 
     except Exception as e:
         print(f"Error extracting/processing audio from video {file_name}: {e}")
+        # traceback.print_exc()
 
     # 2. Visual Processing (Sample frames)
     try:
         print(f"Extracting frames from {file_name}...")
         cap = cv2.VideoCapture(file_path)
+        if not cap.isOpened():
+             print(f"Could not open video {file_path}")
+             return docs
+
         fps = cap.get(cv2.CAP_PROP_FPS)
+        if fps <= 0: fps = 24 # Fallback
+
         frame_interval = int(fps * 10) # Every 10 seconds
+        if frame_interval == 0: frame_interval = 1
 
         frame_count = 0
         success = True
