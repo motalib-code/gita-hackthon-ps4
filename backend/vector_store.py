@@ -3,16 +3,17 @@ from langchain_chroma import Chroma
 from langchain_openai import OpenAIEmbeddings
 import os
 
-# Initialize Vector Store
-# Using OpenAI Embeddings for best compatibility with GPT-4o
-embeddings = OpenAIEmbeddings(model="text-embedding-3-small")
-
 PERSIST_DIRECTORY = "./backend/chroma_db"
+
+def get_embeddings():
+    if not os.getenv("OPENAI_API_KEY"):
+        raise ValueError("OPENAI_API_KEY environment variable is not set.")
+    return OpenAIEmbeddings(model="text-embedding-3-small")
 
 def get_vector_store():
     return Chroma(
         collection_name="hackathon_rag",
-        embedding_function=embeddings,
+        embedding_function=get_embeddings(),
         persist_directory=PERSIST_DIRECTORY
     )
 

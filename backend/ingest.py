@@ -3,15 +3,13 @@ import shutil
 import tempfile
 from langchain_community.document_loaders import PyPDFLoader
 from langchain_core.documents import Document
-from pydub import AudioSegment
-import speech_recognition as sr
-from PIL import Image
+# from pydub import AudioSegment
+# import speech_recognition as sr
+# from PIL import Image
 import base64
 from langchain_openai import ChatOpenAI
 from langchain_core.messages import HumanMessage
-
-# Assuming OPENAI_API_KEY is in env
-api_key = os.getenv("OPENAI_API_KEY")
+from openai import OpenAI
 
 def process_pdf(file_path, file_name):
     loader = PyPDFLoader(file_path)
@@ -32,7 +30,9 @@ def process_pdf(file_path, file_name):
 
 def process_audio(file_path, file_name):
     # Using OpenAI Whisper API for best results
-    from openai import OpenAI
+    if not os.getenv("OPENAI_API_KEY"):
+         raise ValueError("OPENAI_API_KEY not set for Audio Processing")
+
     client = OpenAI()
 
     with open(file_path, "rb") as audio_file:
@@ -44,10 +44,11 @@ def process_audio(file_path, file_name):
         )
 
     docs = []
+    # Fix: OpenAI Python SDK v1 returns objects, not dicts
     for segment in transcript.segments:
-        start_time = segment['start']
-        end_time = segment['end']
-        text = segment['text']
+        start_time = segment.start
+        end_time = segment.end
+        text = segment.text
 
         minutes = int(start_time // 60)
         seconds = int(start_time % 60)
@@ -68,6 +69,9 @@ def process_audio(file_path, file_name):
     return docs
 
 def process_image(file_path, file_name):
+    if not os.getenv("OPENAI_API_KEY"):
+         raise ValueError("OPENAI_API_KEY not set for Image Processing")
+
     client = ChatOpenAI(model="gpt-4o", max_tokens=1000)
 
     with open(file_path, "rb") as image_file:
@@ -101,11 +105,16 @@ def process_file_from_path(file_path, file_name):
 
     if suffix == ".pdf":
         return process_pdf(file_path, file_name)
-    elif suffix in [".mp3", ".wav", ".m4a", ".mp4"]:
+    elif suffix in [".mp3", ".wav", ".m4a", ".mp4", ".mpeg", ".mpga", ".m4a", ".wav", ".webm"]:
         return process_audio(file_path, file_name)
-    elif suffix in [".jpg", ".jpeg", ".png"]:
+    elif suffix in [".jpg", ".jpeg", ".png", ".webp", ".gif"]:
         return process_image(file_path, file_name)
     else:
+        # Fallback for text files
+        if suffix in [".txt", ".md"]:
+             with open(file_path, "r", encoding="utf-8") as f:
+                 content = f.read()
+             return [Document(page_content=content, metadata={"source": file_name, "citation_ref": file_name})]
         return []
 
 def ingest_file(file, file_name):

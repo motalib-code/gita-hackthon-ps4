@@ -1,272 +1,237 @@
 import streamlit as st
-from langchain_core.documents import Document
-from langchain_text_splitters import RecursiveCharacterTextSplitter
-from transformers import AutoTokenizer, AutoModel,AutoModelForSeq2SeqLM, AutoModelForCausalLM, pipeline
-from langchain_community.llms import HuggingFacePipeline
-# from pymilvus import MilvusClient
-from langchain_community.vectorstores import FAISS
-import torch
-from langchain_core.runnables import RunnablePassthrough
-from langchain_core.prompts import PromptTemplate
-from langchain_core.output_parsers import StrOutputParser
-# from langchain_milvus import Milvus 
-from langchain_community.embeddings import HuggingFaceEmbeddings
-from transformers import T5EncoderModel
-from utils.audio_utils import extract_audio_text
-from utils.video_utils import extract_video_text
-from utils.image_utils import extract_image_text
-from utils.document_loaders import (
-    process_logs,
-    load_text_documents,
-    load_word_documents,
-    load_pdf_documents,
-)
+import os
+import shutil
+import time
+import pandas as pd
 
+# Set page config FIRST
+st.set_page_config(page_title="Chakravyuh-AI: Multimodal RAG", layout="wide", page_icon="☸️")
 
+# Custom CSS for "Chakravyuh" styling
+st.markdown("""
+<style>
+    .main {
+        background-color: #f5f5f5;
+    }
+    .stChatInput {
+        position: fixed;
+        bottom: 30px;
+    }
+    .stStatus {
+        background-color: #e6f3ff;
+        border-radius: 10px;
+        padding: 10px;
+        border: 1px solid #2196F3;
+    }
+    .evidence-card {
+        background-color: white;
+        padding: 15px;
+        margin-bottom: 10px;
+        border-radius: 8px;
+        box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        border-left: 5px solid #4CAF50;
+    }
+    .conflict-card {
+        background-color: #fff3f3;
+        padding: 15px;
+        margin-bottom: 10px;
+        border-radius: 8px;
+        box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        border-left: 5px solid #F44336;
+    }
+    .citation {
+        font-size: 0.8em;
+        color: #666;
+        font-style: italic;
+    }
+</style>
+""", unsafe_allow_html=True)
 
-# Function to clear CUDA memory
-def clear_cuda_memory():
-    if torch.cuda.is_available():
-        torch.cuda.empty_cache()
-        torch.cuda.ipc_collect()
-        st.write("CUDA memory cleared successfully.")
+# Helper functions for imports (Lazy loading to allow API Key input first)
+def get_backend_modules():
+    try:
+        from backend.rag import answer_query
+        from backend.ingest import process_file_from_path
+        from backend.vector_store import add_documents
+        return answer_query, process_file_from_path, add_documents
+    except Exception as e:
+        return None, None, None
 
-# Initialize device
-# device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-device = torch.device("cpu")
-# st.write(f"Using device: {'GPU' if device.type == 'cuda' else 'CPU'}")
+# Initialize Session State
+if "messages" not in st.session_state:
+    st.session_state.messages = []
+if "evidence_log" not in st.session_state:
+    st.session_state.evidence_log = []
+if "api_key_set" not in st.session_state:
+    st.session_state.api_key_set = False
 
-# Clear CUDA memory before processing
-clear_cuda_memory()
+# Sidebar: System Configuration & Ingestion
+with st.sidebar:
+    st.title("☸️ Chakravyuh Control")
 
-# Initialize Milvus client
-# Client initialization removed for FAISS compatibility
-# client = MilvusClient("milvus_database.db")
-# client.create_collection(
-#     collection_name="my_collection",
-#     dimension=768
-# )
+    # 1. API Key Setup
+    api_key = st.text_input("OpenAI API Key", type="password", help="Required for GPT-4o & Whisper")
+    if api_key:
+        os.environ["OPENAI_API_KEY"] = api_key
+        st.session_state.api_key_set = True
+        st.success("System Online")
 
+    st.divider()
 
-# Function to format documents
-def format_docs(docs):
-    return "\n\n".join(doc.page_content for doc in docs)
+    # 2. Multimodal Ingestion
+    st.header("📥 Ingestion Pipeline")
 
-def chunk_documents(data, chunk_size=1000, chunk_overlap=200):
-    """Split documents into manageable chunks."""
-    splitter = RecursiveCharacterTextSplitter(
-        chunk_size=chunk_size,
-        chunk_overlap=chunk_overlap,
-        separators=["\n\n", "\n", " "]
+    uploaded_file = st.file_uploader(
+        "Upload Evidence (PDF, Audio, Image)",
+        type=["pdf", "mp3", "wav", "jpg", "png", "jpeg", "txt"],
+        help="Supports Multimodal Data"
     )
-    return splitter.split_documents(data)
 
-
-def process_and_store_documents(documents):
-    """Process and store documents in Milvus."""
-    clear_cuda_memory()  # Clear memory before processing each batch
-    chunks = chunk_documents(documents)
-    st.write("Chunks generated:")
-    st.write(chunks)
-    embeddings=HuggingFaceEmbeddings()
-    vectorstore = FAISS.from_documents(chunks, embeddings)
-    vectorstore.save_local("faiss_index")
-    # vectorstore = Milvus.from_documents(
-    #     documents=chunks,
-    #     embedding=embeddings,  # Pass the embeddings
-    #     connection_args={"uri": "./milvus_database.db"},
-    #     # drop_old=True,  # Drop old collection
-    # )
-
-    st.success("Documents processed and stored in Milvus successfully!")
-
-def app():
-    st.title("Multimodal Document Processing with LangChain")
-    st.subheader("Upload your files or query the Milvus database")
-
-    # Switch between upload and query mode
-    mode = st.radio("Choose mode", ["Upload Files", "Query"])
-
-    if mode == "Upload Files":
-        uploaded_file = st.file_uploader("Choose a file", type=["mp4", "mp3", "wav", "txt", "jpg", "jpeg", "png", "csv", "yaml", "json", "docx", "pdf"])
-
-        if st.button("Process File"):
-            if uploaded_file:
-                file_type = uploaded_file.type
-                st.write(f"Detected file type: {file_type}")
-
-                documents = None
-
-                if "audio" in file_type:
-                    st.audio(uploaded_file, format="audio/wav")
-                    st.write("Processing audio...")
-                    text = extract_audio_text(uploaded_file)
-                    documents = [Document(page_content=text, metadata={"source": "audio", "file_name": uploaded_file.name})]
-
-                elif "video" in file_type:
-                    st.video(uploaded_file)
-                    st.write("Processing video...")
-                    text = extract_video_text(uploaded_file)
-                    documents = [Document(page_content=text, metadata={"source": "video", "file_name": uploaded_file.name})]
-
-                elif "image" in file_type:
-                    st.image(uploaded_file, caption="Uploaded Image")
-                    st.write("Processing image...")
-                    documents = extract_image_text(uploaded_file)
-
-                elif "csv" in file_type or "yaml" in file_type or "json" in file_type:
-                    st.write("Processing structured logs...")
-                    documents = process_logs(uploaded_file, file_type, uploaded_file.name)
-
-                elif "document" in file_type:
-                    st.write("Processing Word document...")
-                    documents = load_word_documents(uploaded_file)
-
-                elif "pdf" in file_type:
-                    st.write("Processing PDF document...")
-                    documents = load_pdf_documents(uploaded_file)
-
-                elif "text" in file_type:
-                    st.write("Processing text document...")
-                    documents = load_text_documents(uploaded_file)
-
-                if documents:
-                    st.write("Processing complete. Storing in Milvus...")
-                    process_and_store_documents(documents)
-                else:
-                    st.error("Failed to process the document. Please check the file type.")
-
-    elif mode == "Query":
-        query = st.text_input("Enter your query:")
-        if st.button("Search"):
-            if query:
-                st.write(f"Searching for: {query}")
-                clear_cuda_memory()  # Clear CUDA memory before querying
-
-                embeddings=HuggingFaceEmbeddings()
+    if uploaded_file and st.session_state.api_key_set:
+        if st.button("Ingest & Index"):
+            with st.spinner("Running Ingestion Pipeline..."):
+                # Save locally
+                os.makedirs("backend/data_store", exist_ok=True)
+                file_path = os.path.join("backend/data_store", uploaded_file.name)
+                with open(file_path, "wb") as f:
+                    f.write(uploaded_file.getbuffer())
                 
-                # vectorstore = Milvus(
-                #     embedding_function=embeddings,
-                #     connection_args={"uri": "./milvus_database.db"},
-                #     collection_name="LangChainCollection",
-                # )
+                # Import Backend
+                answer_query, process_file_from_path, add_documents = get_backend_modules()
+                
+                # Process
+                status_container = st.status("Processing Data Streams...", expanded=True)
+                
+                status_container.write("🔍 Identifying Modality...")
+                time.sleep(0.5)
+                
                 try:
-                    vectorstore = FAISS.load_local("faiss_index", embeddings, allow_dangerous_deserialization=True)
+                    status_container.write("🧠 Extracting Semantics (Whisper/GPT-4o)...")
+                    docs = process_file_from_path(file_path, uploaded_file.name)
+
+                    status_container.write("🕸️ Generating Hyper-Node Embeddings...")
+                    count = add_documents(docs)
+
+                    status_container.update(label="Ingestion Complete!", state="complete", expanded=False)
+                    st.success(f"Successfully indexed {count} chunks from {uploaded_file.name}")
+
                 except Exception as e:
-                    st.error("Index not found. Please upload a document first.")
-                    return
-                # Perform similarity search using the query embedding
-                # docs = vectorstore.similarity_search(query, k=2)
-                # docs = vectorstore.similarity_search_with_score(query,k=2)
+                    status_container.update(label="Ingestion Failed", state="error")
+                    st.error(f"Error: {str(e)}")
+
+    elif uploaded_file and not st.session_state.api_key_set:
+        st.warning("Please enter OpenAI API Key first.")
+
+# Main Layout: Split Screen
+col1, col2 = st.columns([1, 1])
+
+# Left Column: Chat Interface
+with col1:
+    st.subheader("💬 Investigation Console")
+
+    # Display Chat History
+    for message in st.session_state.messages:
+        with st.chat_message(message["role"]):
+            st.markdown(message["content"])
+
+    # Chat Input
+    if prompt := st.chat_input("Ask about the evidence..."):
+        if not st.session_state.api_key_set:
+            st.error("System Offline: API Key Missing")
+        else:
+            # Add user message
+            st.session_state.messages.append({"role": "user", "content": prompt})
+            with st.chat_message("user"):
+                st.markdown(prompt)
+
+            # Generate Response
+            with st.chat_message("assistant"):
+                answer_query, _, _ = get_backend_modules()
                 
-                retriever = vectorstore.as_retriever(search_type="mmr", search_kwargs={"k": 1})
-                docs=retriever.invoke(query)
+                # Animated Thinking Process
+                with st.status("Architecting Reasoning...", expanded=True) as status:
+                    status.write("🧠 Intent Classification: Factual Inquiry")
+                    time.sleep(0.5)
+
+                    status.write("🔍 Retrieving Evidence (Vector Search)...")
+                    # This logic is actually inside `answer_query` but we simulate the feedback here
+                    # or better yet, `answer_query` runs fast.
+
+                    status.write("⚖️ Detecting Conflicts & Judging...")
+                    time.sleep(0.5)
+
+                    try:
+                        result = answer_query(prompt)
+                        response_text = result["answer"]
+                        sources = result["sources"]
+
+                        status.update(label="Response Generated", state="complete", expanded=False)
+
+                        st.markdown(response_text)
+
+                        # Save to history
+                        st.session_state.messages.append({"role": "assistant", "content": response_text})
+
+                        # Update Evidence Log
+                        st.session_state.evidence_log = sources
+
+                    except Exception as e:
+                        status.update(label="System Failure", state="error")
+                        st.error(f"Error: {str(e)}")
+
+# Right Column: Evidence Board (Explainability)
+with col2:
+    st.subheader("🕵️ Evidence Board (Explainable AI)")
+
+    if st.session_state.evidence_log:
+        st.markdown("### Retrieved Context")
+
+        # Check for Conflicts (Simple heuristic based on "CONFLICT DETECTED" string in answer)
+        last_msg = st.session_state.messages[-1]["content"] if st.session_state.messages else ""
+        if "CONFLICT DETECTED" in last_msg:
+            st.markdown("""
+            <div class="conflict-card">
+                <b>⚠️ CONFLICT ALERT</b><br>
+                The system detected contradictions in the retrieved evidence. See the breakdown below.
+            </div>
+            """, unsafe_allow_html=True)
+
+        # Display Sources
+        for i, source in enumerate(st.session_state.evidence_log):
+            source_type = source.get("type", "text")
+            ref = source.get("citation_ref", "Unknown")
+
+            with st.container():
+                st.markdown(f"""
+                <div class="evidence-card">
+                    <b>Source {i+1}: {ref}</b> <span style='float:right; font-size:0.8em; background:#ddd; padding:2px 5px; border-radius:4px;'>{source_type.upper()}</span>
+                    <br>
+                    <span class="citation">Metadata: {source}</span>
+                </div>
+                """, unsafe_allow_html=True)
                 
-                st.write(docs)
-                device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+                # If image, show it
+                if source_type == "image":
+                    media_url = source.get("media_url", "")
+                    # In a real app, serve this file. Here we just assume it's in backend/data_store
+                    # Since we are local, we can try to find it.
+                    filename = source.get("source", "")
+                    if filename:
+                        filepath = os.path.join("backend/data_store", filename)
+                        if os.path.exists(filepath):
+                            st.image(filepath, caption="Visual Evidence", width=300)
+    else:
+        st.info("Waiting for query... Evidence will appear here.")
 
-                model_name = "google/flan-t5-small"
-
-                # Load the tokenizer
-                tokenizer = AutoTokenizer.from_pretrained(
-                    model_name,
-                    token="hf_token")
-
-                # Load the model with proper arguments
-                model = AutoModelForSeq2SeqLM.from_pretrained(
-                    model_name,
-                    device_map='auto',
-                    torch_dtype=torch.float32,
-                    token="hf_token",
-                    # load_in_8bit=True  # Enable 8-bit quantization
-                    # load_in_4bit=True  # Enable 4-bit quantization
-                )
-                
-
-                # Create a text-generation pipeline
-                pipe = pipeline(
-                    "text2text-generation",
-                    model=model,
-                    tokenizer=tokenizer,
-                    torch_dtype=torch.float32,
-                    device_map="auto",
-                    max_new_tokens=512,
-                    do_sample=True,
-                    top_k=30,
-                    num_return_sequences=10,
-                    eos_token_id=tokenizer.eos_token_id
-                )
-
-                # Wrap the pipeline with HuggingFacePipeline for use with LangChain
-                llm = HuggingFacePipeline(pipeline=pipe, model_kwargs={'temperature': 0})
-                
-                # st.write(llm.predict('what is llms?'))
-###-------------------------------------LLama2------------------------------------------------------------------------------------
-                # model = "meta-llama/Llama-2-7b-chat-hf"
-                # tokenizer = AutoTokenizer.from_pretrained(
-                #             model,
-                #             token="hf_token",)
-
-
-                # model = AutoModelForCausalLM.from_pretrained(model,
-                #                         device_map='auto',
-                #                         torch_dtype=torch.float16,
-                #                         token="hf_token",
-                #                         # load_in_8bit=True,
-                #                         load_in_4bit=True
-                #                         )
-                
-                # pipe = pipeline("text-generation",
-                #                 model=model,
-                #                 tokenizer= tokenizer,
-                #                 torch_dtype=torch.bfloat16,
-                #                 device_map="auto",
-                #                 max_new_tokens = 512,
-                #                 do_sample=True,
-                #                 top_k=30,
-                #                 num_return_sequences=1,
-                #                 eos_token_id=tokenizer.eos_token_id
-                #                 )
-                
-                # llm=HuggingFacePipeline(pipeline=pipe, model_kwargs={'temperature':0})
-
-                
-                
-                
-                # Prompt template
-                PROMPT_TEMPLATE = """
-                Human: You are an AI assistant and provide answers to questions by using fact-based and statistical information when possible.
-                Use the following pieces of information to provide a concise answer to the question enclosed in <question> tags.
-                If you don't know the answer, just say that you don't know, don't try to make up an answer.
-                <context>
-                {context}
-                </context>
-
-                <question>
-                {question}
-                </question>
-
-                The response should be specific and use statistics or numbers when possible.
-
-                Assistant:"""
-
-                prompt = PromptTemplate(
-                    template=PROMPT_TEMPLATE, input_variables=["context", "question"]
-                )
-                rag_chain = (
-                    {"context": retriever | format_docs, "question": RunnablePassthrough()}
-                    | prompt
-                    | llm
-                    | StrOutputParser()
-                )
-                
-                # Invoke the RAG chain to generate a response
-                res = rag_chain.invoke(query)
-                
-                # Display the response
-                st.write("AI Assistant Response:")
-                st.write(res)
-
-
-if __name__ == "__main__":
-    app()
+        st.markdown("### Architecture Diagram")
+        st.code("""
+        [User Input]
+             ⬇
+        [Intent Router] ➡ [Visual Search (CLIP)]
+             ⬇                  ⬇
+        [Text Search]      [Image Captioning]
+             ⬇                  ⬇
+        [Conflict Judge (NLI Logic)]
+             ⬇
+        [Generator (GPT-4o)] ➡ [Frontend]
+        """, language="text")
