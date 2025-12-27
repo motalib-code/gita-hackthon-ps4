@@ -2,6 +2,7 @@ from langchain_openai import ChatOpenAI
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.output_parsers import StrOutputParser
 from backend.vector_store import query_documents
+import os
 
 # The "Judge" Logic
 JUDGE_SYSTEM_PROMPT = """
@@ -42,6 +43,9 @@ def format_docs_with_metadata(docs):
     return "\n".join(formatted)
 
 def get_rag_chain():
+    if not os.getenv("OPENAI_API_KEY"):
+        raise ValueError("OPENAI_API_KEY not set. Cannot initialize GPT-4o.")
+
     llm = ChatOpenAI(model="gpt-4o", temperature=0)
     prompt = ChatPromptTemplate.from_template(JUDGE_SYSTEM_PROMPT)
 
@@ -51,6 +55,12 @@ def get_rag_chain():
 def answer_query(query):
     # 1. Retrieve
     docs = query_documents(query, k=5)
+
+    if not docs:
+        return {
+            "answer": "I could not find any relevant documents in the knowledge base.",
+            "sources": []
+        }
 
     # 2. Format Context
     context_str = format_docs_with_metadata(docs)

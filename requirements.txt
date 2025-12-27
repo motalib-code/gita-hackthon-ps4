@@ -157,3 +157,8 @@ webencodings
 wrapt
 xxhash
 yarl
+
+chromadb
+langchain-chroma
+langchain-openai
+openai
